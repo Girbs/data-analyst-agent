@@ -1,4 +1,4 @@
-from modelConfig import get_clients
+from app.modelconfig import get_clients
 
 _, _, llm, _ = get_clients()
 _, _, evaluator_llm, _ = get_clients()
