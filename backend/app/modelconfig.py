@@ -1,11 +1,32 @@
 import json
 import os
+import re
 
 from langchain_ollama import OllamaLLM
 try:
     from openai import OpenAI
 except ImportError:
     OpenAI = None
+
+
+class OpenAIInvokeAdapter:
+    def __init__(self, client, model):
+        self.client = client
+        self.model = model
+
+    def invoke(self, prompt: str) -> str:
+        try:
+            response = self.client.responses.create(model=self.model, input=prompt)
+            if hasattr(response, "output_text") and response.output_text:
+                return response.output_text
+        except Exception:
+            pass
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content
 
 
 
@@ -61,7 +82,8 @@ def get_clients(temperature=None, num_predict=None):
             raise RuntimeError("OPENAI_API_KEY is not set in config.json or environment")
         api_base = config.get("OPENAI_API_BASE") or os.getenv("OPENAI_API_BASE")
         client = OpenAI(api_key=api_key, base_url=api_base) if api_base else OpenAI(api_key=api_key)
-        return selected_provider, selected_model, None, client
+        llm = OpenAIInvokeAdapter(client, selected_model)
+        return selected_provider, selected_model, llm, client
 
     if selected_provider == "mistral":
         api_key = config.get("MISTRAL_API_KEY") or os.getenv("MISTRAL_API_KEY")
@@ -69,6 +91,12 @@ def get_clients(temperature=None, num_predict=None):
             raise RuntimeError("MISTRAL_API_KEY is not set in config.json or environment")
         api_base = config.get("MISTRAL_API_BASE") or os.getenv("MISTRAL_API_BASE") or "https://api.mistral.ai/v1"
         client = OpenAI(api_key=api_key, base_url=api_base)
-        return selected_provider, selected_model, None, client
+        llm = OpenAIInvokeAdapter(client, selected_model)
+        return selected_provider, selected_model, llm, client
 
     raise ValueError("PROVIDER must be 'ollama', 'openai', or 'mistral'")
+
+def extract_json(llm_output):
+  json_text = re.search(r"\{.*\}", llm_output, re.DOTALL).group()
+  result = json.loads(json_text)
+  return result
