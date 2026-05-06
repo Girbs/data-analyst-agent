@@ -1,9 +1,21 @@
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 import pandas as pd
-from app.agent.agentConfig import code_evaluation, code_generation, df_schema
-from app.modelconfig import PROVIDER, get_model_name, extract_json
+
+try:
+    from .agent.agentConfig import code_evaluation, code_generation, df_schema
+    from .modelconfig import PROVIDER, get_model_name, extract_json
+except ImportError:
+    import sys
+
+    backend_dir = Path(__file__).resolve().parents[1]
+    if str(backend_dir) not in sys.path:
+        sys.path.insert(0, str(backend_dir))
+
+    from app.agent.agentConfig import code_evaluation, code_generation, df_schema
+    from app.modelconfig import PROVIDER, get_model_name, extract_json
 
 
 app = FastAPI()
@@ -13,7 +25,10 @@ QUESTION_2 = """Using only vehicles with model year 2017, compute for each state
   - the overall average price of all vehicles in that state
 
   Calculate the percentage deviation of automatic vehicles from the state average and return the single state with the maximum absolute deviation, along with the deviation value."""
-DATA_PATH = os.getenv("DATA_FILE", "data/datafile.csv")
+DATA_PATH = os.getenv(
+        "DATA_FILE",
+        str(Path(__file__).resolve().parents[1] / "data" / "datafile.csv"),
+)
 
 @app.get("/")
 def root():
@@ -47,6 +62,9 @@ def root():
     }
 
 def get_data() -> pd.DataFrame:
-    data_path = os.getenv("DATA_FILE", "data/datafile.csv")
+    data_path = os.getenv(
+        "DATA_FILE",
+        str(Path(__file__).resolve().parents[1] / "data" / "datafile.csv"),
+    )
     df = pd.read_csv(data_path)
     return df

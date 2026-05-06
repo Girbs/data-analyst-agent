@@ -1,7 +1,22 @@
-from app.modelconfig import get_clients
+try:
+    from ..modelconfig import get_clients
+except ImportError:
+    from app.modelconfig import get_clients
 
-_, _, llm, _ = get_clients()
-_, _, evaluator_llm, _ = get_clients()
+llm = None
+evaluator_llm = None
+
+
+def _get_clients():
+    global llm, evaluator_llm
+
+    if llm is None or evaluator_llm is None:
+        _, _, llm, _ = get_clients()
+        _, _, evaluator_llm, _ = get_clients()
+
+    return llm, evaluator_llm
+
+
 def df_schema():
     df_schema = """
     order_id: unique identifier for each order,
@@ -77,7 +92,8 @@ def code_generation(data_path, df_schema, question):
     No other explanation or reasoning is required.
     """
 
-    response_from_llm = llm.invoke(code_generation_prompt)
+    llm_client, _ = _get_clients()
+    response_from_llm = llm_client.invoke(code_generation_prompt)
 
     return response_from_llm if isinstance(response_from_llm, str) else response_from_llm.content
 
@@ -126,7 +142,8 @@ def code_evaluation(question,code,df_schema):
     Do NOT fix, rewrite, execute, or explain the code.
     """
 
-    response_from_llm = evaluator_llm.invoke(evaluation_prompt)
+    _, evaluator_llm_client = _get_clients()
+    response_from_llm = evaluator_llm_client.invoke(evaluation_prompt)
 
     return response_from_llm if isinstance(response_from_llm, str) else response_from_llm.content
 
@@ -187,7 +204,8 @@ def set_soql_query(question: str) -> str:
     """
 
     # Call the LLM
-    response_from_llm = llm.invoke(soql_generation_prompt)
+    llm_client, _ = _get_clients()
+    response_from_llm = llm_client.invoke(soql_generation_prompt)
 
     # Return a clean string
     if isinstance(response_from_llm, str):
