@@ -125,7 +125,7 @@ def chat_with_data(question: str) -> str:
     llm_result_3 = extract_json(evaluation)
     execution_result = execute_generated_code(code)
 
-    return execution_result
+    return llm_result_3
 
 
 def fix_llm_code(code_str: str) -> str:
