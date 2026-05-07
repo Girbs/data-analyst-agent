@@ -1,6 +1,7 @@
 import os
 import contextlib
 import io
+import json
 import re
 from pathlib import Path
 
@@ -27,7 +28,11 @@ app = FastAPI()
 # Allow CORS for local frontend dev server(s)
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -82,15 +87,19 @@ def get_data() -> pd.DataFrame:
     df = pd.read_csv(data_path)
     return df
 
+def extract_json(llm_output):
+  json_text = re.search(r"\{.*\}", llm_output, re.DOTALL).group()
+  result = json.loads(json_text)
+  return result
 
-def execute_generated_code(code: str):
-    cleaned_code = re.sub(r"^```(?:python)?\s*|\s*```$", "", code.strip(), flags=re.IGNORECASE | re.DOTALL)
+
+def execute_generated_code(code_str: str):
+    cleaned_code = fix_llm_code(code_str)
 
     execution_globals = {
         "__builtins__": __builtins__,
         "pd": pd,
         "get_data": get_data,
-        "DATA_PATH": DATA_PATH,
     }
     execution_locals = {}
     stdout_buffer = io.StringIO()
@@ -108,13 +117,33 @@ def execute_generated_code(code: str):
     return None
 
 @app.get("/chat")
-def chat_with_data(question: str):
+def chat_with_data(question: str) -> str:
+    df = get_data()
     schema = df_schema()
     code = code_generation(DATA_PATH, schema, question)
-    evaluation = code_evaluation(question, code, schema)
+    evaluation = code_evaluation(question, fix_llm_code(code), schema)
     llm_result_3 = extract_json(evaluation)
     execution_result = execute_generated_code(code)
+
+    return execution_result
+
+
+def fix_llm_code(code_str: str) -> str:
+    """
+    Cleans and fixes common issues in LLM-generated Python code strings.
+    """
     
-    #convert execution_result to string for better display in frontend
-    return str(execution_result)
+    # Fix markdown hyperlinks like [pd.read](http://...) -> pd.read
+    code_str = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', code_str)
+    
+    # Remove markdown code fences (```python ... ``` or ``` ... ```)
+    code_str = re.sub(r'```(?:python)?\n?', '', code_str)
+    
+    # Remove any remaining backticks
+    code_str = code_str.replace('`', '')
+    
+    # Strip leading/trailing whitespace
+    code_str = code_str.strip()
+    
+    return code_str
 

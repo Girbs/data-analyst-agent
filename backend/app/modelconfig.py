@@ -2,11 +2,7 @@ import json
 import os
 import re
 
-try:
-    from langchain_ollama import OllamaLLM
-except ImportError:
-    OllamaLLM = None
-
+from langchain_ollama import OllamaLLM
 try:
     from openai import OpenAI
 except ImportError:
@@ -70,9 +66,6 @@ def get_clients(temperature=None, num_predict=None):
     config = load_config()
 
     if selected_provider == "ollama":
-        if OllamaLLM is None:
-            raise RuntimeError("langchain_ollama is not installed. Run: pip install langchain-ollama")
-
         llm = OllamaLLM(
             model=selected_model,
             temperature=selected_temperature,
