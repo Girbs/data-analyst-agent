@@ -1,4 +1,7 @@
 import os
+import contextlib
+import io
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -24,11 +27,7 @@ app = FastAPI()
 # Allow CORS for local frontend dev server(s)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-    ],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -82,3 +81,40 @@ def get_data() -> pd.DataFrame:
     )
     df = pd.read_csv(data_path)
     return df
+
+
+def execute_generated_code(code: str):
+    cleaned_code = re.sub(r"^```(?:python)?\s*|\s*```$", "", code.strip(), flags=re.IGNORECASE | re.DOTALL)
+
+    execution_globals = {
+        "__builtins__": __builtins__,
+        "pd": pd,
+        "get_data": get_data,
+        "DATA_PATH": DATA_PATH,
+    }
+    execution_locals = {}
+    stdout_buffer = io.StringIO()
+
+    with contextlib.redirect_stdout(stdout_buffer):
+        exec(cleaned_code, execution_globals, execution_locals)
+
+    if "result" in execution_locals:
+        return execution_locals["result"]
+
+    stdout_value = stdout_buffer.getvalue().strip()
+    if stdout_value:
+        return stdout_value
+
+    return None
+
+@app.get("/chat")
+def chat_with_data(question: str):
+    schema = df_schema()
+    code = code_generation(DATA_PATH, schema, question)
+    evaluation = code_evaluation(question, code, schema)
+    llm_result_3 = extract_json(evaluation)
+    execution_result = execute_generated_code(code)
+    
+    #convert execution_result to string for better display in frontend
+    return str(execution_result)
+
