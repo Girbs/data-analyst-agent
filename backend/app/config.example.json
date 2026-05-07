@@ -1,0 +1,5 @@
+{
+  "HF_TOKEN": "REPLACE_WITH_HF_TOKEN",
+  "OPENAI_API_KEY": "REPLACE_WITH_OPENAI_KEY",
+  "OPENAI_API_BASE": "https://aibe.mygreatlearning.com/openai/v1"
+}
