@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 import pandas as pd
+from fastapi.middleware.cors import CORSMiddleware
 
 try:
     from .agent.agentConfig import code_evaluation, code_generation, df_schema
@@ -19,6 +20,19 @@ except ImportError:
 
 
 app = FastAPI()
+
+# Allow CORS for local frontend dev server(s)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 QUESTION_2 = """Using only vehicles with model year 2017, compute for each state:
   - the average price of automatic-transmission vehicles

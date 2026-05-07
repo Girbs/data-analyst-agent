@@ -1,322 +1,198 @@
-import { useMemo, useState } from 'react'
+// React hooks for state management, side effects, and DOM access
+import { useEffect, useRef, useState } from 'react'
 import './App.css'
+import ChatCardContainer from './components/ChatCardContainer'
+import NavSide from './components/navSide'
 
-const initialChats = [
-  {
-    id: 'chat-1',
-    title: 'Sales funnel review',
-    createdAt: 'Today',
-    messages: [
-      {
-        id: 'msg-1',
-        role: 'assistant',
-        content:
-          'I can help analyze the funnel, summarize trends, and flag anything unusual in the numbers.',
-        time: '09:12',
-      },
-      {
-        id: 'msg-2',
-        role: 'user',
-        content: 'Compare this week with last week and highlight the biggest drop-offs.',
-        time: '09:14',
-      },
-      {
-        id: 'msg-3',
-        role: 'assistant',
-        content:
-          'I will pull the stage-by-stage conversion rates, identify the largest leakage points, and keep the summary concise.',
-        time: '09:14',
-      },
-    ],
-  },
-  {
-    id: 'chat-2',
-    title: 'Customer segment summary',
-    createdAt: 'Yesterday',
-    messages: [
-      {
-        id: 'msg-4',
-        role: 'assistant',
-        content:
-          'Share the CSV or API payload and I will turn it into a segment-level summary with clear action items.',
-        time: 'Yesterday',
-      },
-    ],
-  },
-  {
-    id: 'chat-3',
-    title: 'Q1 dashboard notes',
-    createdAt: 'Mon',
-    messages: [
-      {
-        id: 'msg-5',
-        role: 'user',
-        content: 'Summarize the dashboard into a short executive update.',
-        time: 'Mon',
-      },
-      {
-        id: 'msg-6',
-        role: 'assistant',
-        content:
-          'Revenue was stable, traffic improved slightly, and the main risk is the slower conversion in the trial cohort.',
-        time: 'Mon',
-      },
-    ],
-  },
-]
+// API endpoint configuration: use VITE_API_BASE_URL environment variable if provided,
+// otherwise default to localhost:8000 for local development
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
-
-function buildTitle(text) {
-  const words = text.trim().split(/\s+/).slice(0, 4)
-  return words.length ? words.join(' ') : 'New chat'
-}
-
-function formatTime(date = new Date()) {
-  return date.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function createId() {
-  return crypto.randomUUID()
-}
-
-function fallbackReply(message) {
-  return [
-    'I could not reach the API, so I used a local fallback response.',
-    `You said: “${message}”`,
-    'Connect your Python service to replace this placeholder with model output.',
-  ].join(' ')
-}
-
+/**
+ * App Component
+ * 
+ * Fetches the backend root endpoint (GET /) and displays the returned model and evaluation data.
+ * The backend returns JSON with structure: { model: {...}, evaluation: {...} }
+ */
 function App() {
-  const [chats, setChats] = useState(initialChats)
-  const [activeChatId, setActiveChatId] = useState(initialChats[0].id)
-  const [draft, setDraft] = useState('')
-  const [isSending, setIsSending] = useState(false)
+  // State for storing fetched model and evaluation data
+  const [model, setModel] = useState(null)
+  const [evaluation, setEvaluation] = useState(null)
+  // State for tracking loading and error states during fetch
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  // State for storing the input text value
+  const [inputValue, setInputValue] = useState('')
+  // Messages for chat display: type 'message' (user) or 'assistant'
+  const [messages, setMessages] = useState([])
+  const inputRef = useRef(null)
 
-  const activeChat = useMemo(
-    () => chats.find((chat) => chat.id === activeChatId) ?? chats[0],
-    [activeChatId, chats],
-  )
+  /**
+   * useEffect Hook: Runs once on component mount to fetch backend data
+   * 
+   * - Fetches the root endpoint (/) from the backend API
+   * - Handles loading, success, and error states
+   * - Parses evaluation data if it comes as a JSON string
+   * - Uses 'mounted' flag to prevent state updates after unmount (memory leak prevention)
+   */
+  useEffect(() => {
+    // Flag to track if component is still mounted (prevents state updates after unmount)
+    let mounted = true
 
-  async function handleSend(event) {
-    event.preventDefault()
+    async function fetchRoot() {
+      setLoading(true)
+      setError(null)
+      try {
+        // Fetch the backend root endpoint
+        const res = await fetch(`${apiBaseUrl}/`)
+        if (!res.ok) throw new Error(res.statusText || 'Network error')
+        const payload = await res.json()
 
-    const text = draft.trim()
-    if (!text || isSending || !activeChat) {
-      return
+        // Only update state if component is still mounted
+        if (!mounted) return
+
+        // Extract and store model info
+        setModel(payload.model ?? null)
+
+        /**
+         * Handle evaluation data
+         * Backend may return evaluation as:
+         *   - A JSON object (directly usable)
+         *   - A JSON string (needs parsing)
+         * Try to parse if it's a string; if parsing fails, keep the original string
+         */
+        let evalData = payload.evaluation ?? null
+        if (typeof evalData === 'string') {
+          try {
+            evalData = JSON.parse(evalData)
+          } catch {
+            // If parsing fails, keep the original string for display
+          }
+        }
+
+        setEvaluation(evalData)
+      } catch (err) {
+        if (!mounted) return
+        // Store error message for display to user
+        setError(String(err))
+      } finally {
+        if (mounted) setLoading(false)
+      }
     }
 
-    const userMessage = {
-      id: createId(),
-      role: 'user',
-      content: text,
-      time: formatTime(),
+    // Trigger the fetch on component mount
+    fetchRoot()
+
+    // Cleanup function: mark component as unmounted to prevent memory leaks
+    return () => {
+      mounted = false
     }
+  }, []) // Empty dependency array: runs only once on mount
 
-    const chatId = activeChat.id
-    const nextMessages = [...activeChat.messages, userMessage]
-    const nextTitle =
-      activeChat.messages.length === 0 ? buildTitle(text) : activeChat.title
+  function handleInputChange(event) {
+    setInputValue(event.target.value)
 
-    setDraft('')
-    setIsSending(true)
+    let inputTest = event.target.value
+    console.log('Input value***************:', inputTest)
 
-    setChats((currentChats) =>
-      currentChats.map((chat) =>
-        chat.id === chatId
-          ? {
-              ...chat,
-              title: nextTitle,
-              messages: nextMessages,
-            }
-          : chat,
-      ),
-    )
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          chatId,
-          message: text,
-          messages: nextMessages.map(({ role, content }) => ({ role, content })),
-        }),
-      })
-
-      const payload = await response.json()
-      const assistantText =
-        payload.reply ?? payload.message ?? payload.response ?? fallbackReply(text)
-
-      const assistantMessage = {
-        id: createId(),
-        role: 'assistant',
-        content: assistantText,
-        time: formatTime(),
-      }
-
-      setChats((currentChats) =>
-        currentChats.map((chat) =>
-          chat.id === chatId
-            ? {
-                ...chat,
-                messages: [...chat.messages, assistantMessage],
-              }
-            : chat,
-        ),
-      )
-    } catch {
-      const assistantMessage = {
-        id: createId(),
-        role: 'assistant',
-        content: fallbackReply(text),
-        time: formatTime(),
-      }
-
-      setChats((currentChats) =>
-        currentChats.map((chat) =>
-          chat.id === chatId
-            ? {
-                ...chat,
-                messages: [...chat.messages, assistantMessage],
-              }
-            : chat,
-        ),
-      )
-    } finally {
-      setIsSending(false)
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+      inputRef.current.style.height = `${inputRef.current.scrollHeight}px`
     }
   }
 
-  function startNewChat() {
-    const newChat = {
-      id: createId(),
-      title: 'New chat',
-      createdAt: 'Just now',
-      messages: [],
+    function addAssistantMessage(text) {
+      setMessages((prev) => [...prev, { id: Date.now() + Math.random(), text, type: 'assistant' }])
     }
 
-    setChats((currentChats) => [newChat, ...currentChats])
-    setActiveChatId(newChat.id)
-    setDraft('')
-  }
+    function sendrequestHandler() {
+      const text = inputValue?.trim()
+      if (!text) return
+      // add user message
+      setMessages((prev) => [...prev, { id: Date.now() + Math.random(), text, type: 'message' }])
+      setInputValue('')
 
+      // NOTE: when an assistant response is received from backend,
+      // call addAssistantMessage(responseText) to append it.
+      // For quick demonstration, append a placeholder assistant reply after a short delay.
+      setTimeout(() => addAssistantMessage('Assistant response'), 700)
+    }
+
+  // Render the UI
   return (
-    <div className="app-shell">
-      <aside className="history-panel" aria-label="Chat history">
-        <div className="history-header">
-          <div>
-            <p className="eyebrow">History</p>
-            <h2>Chat history</h2>
-          </div>
-          <button className="new-chat-button" type="button" onClick={startNewChat}>
-            New chat
-          </button>
-        </div>
+    <div className="main-container">
+      <NavSide />
+      <main>
+        <h1>Data Analyst Agent</h1>
 
-        <div className="history-list">
-          {chats.map((chat) => {
-            const preview = chat.messages.at(-1)?.content ?? 'No messages yet'
-
-            return (
-              <button
-                key={chat.id}
-                type="button"
-                className={`history-item ${
-                  chat.id === activeChatId ? 'history-item-active' : ''
-                }`}
-                onClick={() => setActiveChatId(chat.id)}
-              >
-                <div>
-                  <strong>{chat.title}</strong>
-                  <p>{preview}</p>
+        {/* Conditional rendering based on loading/error/success states */}
+        {loading ? (
+          // Show loading message while fetching
+          <p className="muted">Loading…</p>
+        ) : error ? (
+          // Show error message if fetch failed
+          <div className="error">Error: {error}</div>
+        ) : (
+          // Display model and evaluation data if fetch succeeded
+          <>
+            <div className="result">
+              {/* Display Model Information */}
+              <div className="row">
+                <div className="label">Model</div>
+                <div className="value">
+                  {model ? (
+                    <>
+                      {/* Show model provider and name */}
+                      <div className="model-line">{model.provider} / {model.name}</div>
+                      {/* Show version if available */}
+                      {model.version ? <div className="model-sub">Version: {model.version}</div> : null}
+                    </>
+                  ) : (
+                    <span className="muted">No model info returned</span>
+                  )}
                 </div>
-                <span>{chat.createdAt}</span>
-              </button>
-            )
-          })}
-        </div>
-      </aside>
+              </div>
 
-      <main className="chat-panel">
-        <header className="chat-header">
-          <div>
-            <p className="eyebrow">AI Agent Chat</p>
-            <h1>{activeChat?.title ?? 'New chat'}</h1>
-            <p className="subtle">
-              Front end for a Python REST API that streams analysis, summaries,
-              and follow-up actions.
-            </p>
-          </div>
-
-          <div className="status-card">
-            <span className="status-dot" />
-            <div>
-              <strong>Connected target</strong>
-              <p>{apiBaseUrl}</p>
+              {/* Display Evaluation Information */}
+              <div className="row">
+                <div className="label">Evaluation</div>
+                <div className="value">
+                  {evaluation ? (
+                    // If evaluation is an object, display as formatted JSON; otherwise show as text
+                    typeof evaluation === 'object' ? (
+                      <pre className="eval-json">{JSON.stringify(evaluation, null, 2)}</pre>
+                    ) : (
+                      <div>{String(evaluation)}</div>
+                    )
+                  ) : (
+                    <span className="muted">No evaluation returned</span>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </header>
 
-        <section className="conversation" aria-label="Chat conversation">
-          {activeChat?.messages?.length ? (
-            activeChat.messages.map((message) => (
-              <article
-                key={message.id}
-                className={`message-row ${
-                  message.role === 'user' ? 'message-row-user' : 'message-row-assistant'
-                }`}
-              >
-                <div className="message-avatar">
-                  {message.role === 'user' ? 'You' : 'AI'}
-                </div>
-                <div className="message-bubble">
-                  <div className="message-meta">
-                    <strong>{message.role === 'user' ? 'You' : 'Agent'}</strong>
-                    <span>{message.time}</span>
-                  </div>
-                  <p>{message.content}</p>
-                </div>
-              </article>
-            ))
-          ) : (
-            <div className="empty-state">
-              <p className="eyebrow">Start here</p>
-              <h2>Ask the agent to analyze data, draft insights, or explain trends.</h2>
-              <p>
-                The composer below sends messages to your Python API and falls back
-                gracefully if the endpoint is unavailable.
-              </p>
+            {/* Input field and button */}
+            <div className="chat-container">
+              {messages.length === 0 ? (
+                <div className="muted">No messages yet</div>
+              ) : (
+                messages.map((m) => <ChatCardContainer key={m.id} message={m} />)
+              )}
             </div>
-          )}
-        </section>
 
-        <form className="composer" onSubmit={handleSend}>
-          <label className="composer-label" htmlFor="chat-input">
-            Message the agent
-          </label>
-          <div className="composer-field">
-            <textarea
-              id="chat-input"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="Ask for a data summary, comparison, recommendation, or next step..."
-              rows="3"
-            />
-            <button type="submit" disabled={!draft.trim() || isSending}>
-              {isSending ? 'Sending...' : 'Send'}
-            </button>
-          </div>
-          <p className="composer-note">
-            POST {apiBaseUrl}/chat with {`{ message, chatId, messages }`}.
-          </p>
-        </form>
+            <div className="input-section">
+              <textarea
+                ref={inputRef}
+                value={inputValue}
+                onChange={handleInputChange}
+                placeholder="Enter your message..."
+                className="input-field"
+                rows="1"
+              />
+              <button className="send-button" onClick={sendrequestHandler}>Send</button>
+            </div>
+          </>
+        )}
       </main>
     </div>
   )
